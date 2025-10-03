@@ -45,11 +45,14 @@ exports.handler = async (event, context) => {
     console.log('Checking PesaFlux status for reference:', reference);
     
     // First check our database
+    console.log('Querying Supabase for transaction...');
     const { data: transaction, error: dbError } = await supabase
       .from('transactions')
       .select('*')
       .or(`reference.eq.${reference},transaction_request_id.eq.${reference}`)
       .maybeSingle();
+    
+    console.log('Supabase query result:', { transaction, dbError });
     
     if (dbError) {
       console.error('Database query error:', dbError);

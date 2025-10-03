@@ -160,7 +160,7 @@ export const MpesaWithdrawalDialog: React.FC<MpesaWithdrawalDialogProps> = ({
         
         // Start polling for payment status
         let attempts = 0;
-        const maxAttempts = 60; // 5 minutes (5 second intervals)
+        const maxAttempts = 24; // 2 minutes (5 second intervals) - reduced for testing
         
         const pollStatus = async () => {
           try {
@@ -203,8 +203,10 @@ export const MpesaWithdrawalDialog: React.FC<MpesaWithdrawalDialogProps> = ({
               setTimeout(pollStatus, 5000); // Poll every 5 seconds
               setProcessingProgress(Math.min((attempts / maxAttempts) * 100, 95));
             } else {
+              console.log('⏱️ Payment timeout reached - showing retry screen');
               setIsProcessing(false);
-              setError("Payment timeout. Please try again or contact support.");
+              setError("Payment timeout after 2 minutes. Please try again.");
+              setShowTransactionError(true); // Show retry screen instead of just error
             }
           } catch (pollError) {
             console.error('Status polling error:', pollError);

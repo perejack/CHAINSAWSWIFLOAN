@@ -110,22 +110,27 @@ exports.handler = async (event, context) => {
     if (data.success === '200' || data.success === 200) {
       // Store transaction in Supabase
       try {
-        const { error: dbError } = await supabase
+        console.log('Attempting to save transaction to Supabase...');
+        const transactionData = {
+          transaction_request_id: data.transaction_request_id,
+          status: 'pending',
+          amount: finalAmount,
+          phone: phoneNumber,
+          email: EMAIL,
+          reference: externalReference,
+          loan_amount: loanAmount,
+        };
+        console.log('Transaction data to save:', transactionData);
+        
+        const { data: insertResult, error: dbError } = await supabase
           .from('transactions')
-          .insert({
-            transaction_request_id: data.transaction_request_id,
-            status: 'pending',
-            amount: finalAmount,
-            phone: phoneNumber,
-            email: EMAIL,
-            reference: externalReference,
-            loan_amount: loanAmount,
-          });
+          .insert(transactionData)
+          .select();
 
         if (dbError) {
           console.error('Database insert error:', dbError);
         } else {
-          console.log('Transaction stored in database:', data.transaction_request_id);
+          console.log('Transaction stored in database successfully:', insertResult);
         }
       } catch (dbErr) {
         console.error('Database error:', dbErr);
