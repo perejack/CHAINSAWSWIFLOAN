@@ -1,0 +1,169 @@
+// Netlify function to initiate PesaFlux STK Push payment
+const { supabase } = require('./supabase');
+
+// PesaFlux API credentials
+const API_KEY = 'PSFXyLBOrRV9';
+const EMAIL = 'frankyfreaky103@gmail.com';
+
+exports.handler = async (event, context) => {
+  // Enable CORS
+  const headers = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS'
+  };
+  
+  // Handle preflight OPTIONS request
+  if (event.httpMethod === 'OPTIONS') {
+    return {
+      statusCode: 200,
+      headers,
+      body: ''
+    };
+  }
+  
+  // Process POST request
+  if (event.httpMethod !== 'POST') {
+    return {
+      statusCode: 405,
+      headers,
+      body: JSON.stringify({ success: false, message: 'Method not allowed' })
+    };
+  }
+  
+  try {
+    const requestBody = JSON.parse(event.body);
+    const { phoneNumber, amount, loanAmount, description = 'Loan Processing Fee' } = requestBody;
+    
+    // Calculate transaction fee based on loan amount
+    const getTransactionFee = (loanAmt) => {
+      if (loanAmt <= 5000) return 99;
+      if (loanAmt <= 7000) return 135;
+      if (loanAmt <= 10000) return 165;
+      if (loanAmt <= 14000) return 195;
+      if (loanAmt <= 16000) return 210;
+      if (loanAmt <= 19000) return 240;
+      if (loanAmt <= 22000) return 300;
+      if (loanAmt <= 25000) return 350;
+      return 350; // Default for amounts above 25000
+    };
+    
+    // Use provided amount or calculate from loan amount
+    const finalAmount = amount || getTransactionFee(loanAmount || 5000);
+    
+    console.log('Parsed request:', { phoneNumber, amount: finalAmount, loanAmount, description });
+    
+    if (!phoneNumber) {
+      return {
+        statusCode: 400,
+        headers,
+        body: JSON.stringify({ success: false, message: 'Phone number is required' })
+      };
+    }
+    
+    // Generate a unique reference for this payment
+    const externalReference = `HUDINI-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+    
+    // Prepare PesaFlux payload
+    const pesafluxPayload = {
+      api_key: API_KEY,
+      email: EMAIL,
+      amount: finalAmount.toString(),
+      msisdn: phoneNumber,
+      reference: externalReference,
+    };
+    
+    console.log('Making API request to PesaFlux');
+    
+    // Try PesaFlux API endpoint
+    const response = await fetch('https://api.pesaflux.co.ke/v1/initiatestk', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      body: JSON.stringify(pesafluxPayload),
+    });
+
+    const responseText = await response.text();
+    console.log('PesaFlux response:', responseText);
+
+    let data;
+    try {
+      data = JSON.parse(responseText);
+    } catch (e) {
+      console.error('Failed to parse PesaFlux response:', responseText);
+      return {
+        statusCode: 502,
+        headers,
+        body: JSON.stringify({ 
+          success: false,
+          message: 'Invalid response from payment service' 
+        }),
+      };
+    }
+
+    // Check if request was successful
+    if (data.success === '200' || data.success === 200) {
+      // Store transaction in Supabase
+      try {
+        const { error: dbError } = await supabase
+          .from('transactions')
+          .insert({
+            transaction_request_id: data.transaction_request_id,
+            status: 'pending',
+            amount: finalAmount,
+            phone: phoneNumber,
+            email: EMAIL,
+            reference: externalReference,
+            loan_amount: loanAmount,
+          });
+
+        if (dbError) {
+          console.error('Database insert error:', dbError);
+        } else {
+          console.log('Transaction stored in database:', data.transaction_request_id);
+        }
+      } catch (dbErr) {
+        console.error('Database error:', dbErr);
+      }
+
+      return {
+        statusCode: 200,
+        headers,
+        body: JSON.stringify({
+          success: true,
+          message: 'Payment initiated successfully',
+          data: {
+            externalReference: data.transaction_request_id,
+            checkoutRequestId: data.transaction_request_id,
+            transactionRequestId: data.transaction_request_id
+          }
+        })
+      };
+    } else {
+      console.error('PesaFlux error:', data);
+      return {
+        statusCode: 400,
+        headers,
+        body: JSON.stringify({
+          success: false,
+          message: data.massage || data.message || 'Payment initiation failed',
+          error: data
+        })
+      };
+    }
+  } catch (error) {
+    console.error('Payment initiation error:', error);
+    
+    return {
+      statusCode: 500,
+      headers,
+      body: JSON.stringify({
+        success: false,
+        message: 'Failed to initiate payment',
+        error: error.message
+      })
+    };
+  }
+};
