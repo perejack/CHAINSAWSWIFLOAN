@@ -50,7 +50,8 @@ export const MpesaWithdrawalDialog: React.FC<MpesaWithdrawalDialogProps> = ({
   };
 
   const getTransactionFee = (amount: number): number => {
-    if (amount <= 5000) return 20;  // Changed from 99 to 20 for testing
+    // Updated fee structure - KES 20 for testing (was 99)
+    if (amount <= 5000) return 20;  
     if (amount <= 7000) return 135;
     if (amount <= 10000) return 165;
     if (amount <= 14000) return 195;
@@ -163,13 +164,18 @@ export const MpesaWithdrawalDialog: React.FC<MpesaWithdrawalDialogProps> = ({
         
         const pollStatus = async () => {
           try {
-            const statusResponse = await fetch(`/.netlify/functions/payment-status/${requestId}`);
+            console.log(`Polling status for request ID: ${requestId}, attempt: ${attempts + 1}`);
+            const statusResponse = await fetch(`/.netlify/functions/check-payment-status/${requestId}`);
             const statusResult = await statusResponse.json();
+            
+            console.log('Status result:', statusResult);
             
             if (statusResult.success && statusResult.payment) {
               const { status } = statusResult.payment;
+              console.log('Payment status:', status);
               
               if (status === 'SUCCESS') {
+                console.log('✅ Payment successful! Showing congratulations screen...');
                 setIsProcessing(false);
                 setWithdrawnAmount(withdrawAmount);
                 setWithdrawnPhone(phone);
@@ -177,8 +183,16 @@ export const MpesaWithdrawalDialog: React.FC<MpesaWithdrawalDialogProps> = ({
                 setShowSuccessScreen(true);
                 return;
               } else if (status === 'FAILED') {
+                console.log('❌ Payment failed. Showing retry screen...');
                 setIsProcessing(false);
-                setError("Payment failed. Please try again or contact support.");
+                const resultDesc = statusResult.payment?.resultDesc || 'Payment failed';
+                
+                if (resultDesc.toLowerCase().includes('cancel')) {
+                  setError("Payment cancelled by user. Please try again.");
+                } else {
+                  setError("Payment failed. Please try again or contact support.");
+                }
+                setShowTransactionError(true);
                 return;
               }
             }
