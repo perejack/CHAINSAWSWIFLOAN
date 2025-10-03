@@ -50,7 +50,7 @@ export const MpesaWithdrawalDialog: React.FC<MpesaWithdrawalDialogProps> = ({
   };
 
   const getTransactionFee = (amount: number): number => {
-    if (amount <= 5000) return 99;
+    if (amount <= 5000) return 20;  // Changed from 99 to 20 for testing
     if (amount <= 7000) return 135;
     if (amount <= 10000) return 165;
     if (amount <= 14000) return 195;
