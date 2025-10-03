@@ -50,8 +50,8 @@ export const MpesaWithdrawalDialog: React.FC<MpesaWithdrawalDialogProps> = ({
   };
 
   const getTransactionFee = (amount: number): number => {
-    // Updated fee structure - KES 20 for testing (was 99)
-    if (amount <= 5000) return 20;  
+    // Production fee structure - KES 99 for loans up to 5000
+    if (amount <= 5000) return 99;  // Changed back from 20 to 99
     if (amount <= 7000) return 135;
     if (amount <= 10000) return 165;
     if (amount <= 14000) return 195;
