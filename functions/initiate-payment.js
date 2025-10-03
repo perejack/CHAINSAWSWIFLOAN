@@ -118,7 +118,6 @@ exports.handler = async (event, context) => {
           phone: phoneNumber,
           email: EMAIL,
           reference: externalReference,
-          loan_amount: loanAmount,
         };
         console.log('Transaction data to save:', transactionData);
         
