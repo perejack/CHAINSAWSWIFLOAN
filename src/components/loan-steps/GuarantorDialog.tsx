@@ -40,6 +40,7 @@ export const GuarantorDialog: React.FC<GuarantorDialogProps> = ({
   const handleSave = () => {
     if (isFormValid()) {
       onSave(formData);
+      onOpenChange(false); // Close the dialog after saving
     }
   };
 
