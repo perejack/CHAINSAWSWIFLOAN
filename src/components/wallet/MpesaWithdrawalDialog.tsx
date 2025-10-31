@@ -140,7 +140,7 @@ export const MpesaWithdrawalDialog: React.FC<MpesaWithdrawalDialogProps> = ({
       }
       
       // Initiate PesaFlux STK Push
-      const response = await fetch('/.netlify/functions/initiate-payment', {
+      const response = await fetch('/api/initiate-payment', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -165,7 +165,7 @@ export const MpesaWithdrawalDialog: React.FC<MpesaWithdrawalDialogProps> = ({
         const pollStatus = async () => {
           try {
             console.log(`Polling status for request ID: ${requestId}, attempt: ${attempts + 1}`);
-            const statusResponse = await fetch(`/.netlify/functions/check-payment-status/${requestId}`);
+            const statusResponse = await fetch(`/api/payment-status?reference=${requestId}`);
             const statusResult = await statusResponse.json();
             
             console.log('Status result:', statusResult);
