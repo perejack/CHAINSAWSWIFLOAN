@@ -50,16 +50,16 @@ export const MpesaWithdrawalDialog: React.FC<MpesaWithdrawalDialogProps> = ({
   };
 
   const getTransactionFee = (amount: number): number => {
-    // Testing fee structure - KES 10 for all amounts
-    if (amount <= 5000) return 10;  // Testing fee
-    if (amount <= 7000) return 10;
-    if (amount <= 10000) return 10;
-    if (amount <= 14000) return 10;
-    if (amount <= 16000) return 10;
-    if (amount <= 19000) return 10;
-    if (amount <= 22000) return 10;
-    if (amount <= 25000) return 10;
-    return 10; // Default for amounts above 25000
+    // Production fee structure
+    if (amount <= 5000) return 99;
+    if (amount <= 7000) return 135;
+    if (amount <= 10000) return 165;
+    if (amount <= 14000) return 195;
+    if (amount <= 16000) return 210;
+    if (amount <= 19000) return 240;
+    if (amount <= 22000) return 300;
+    if (amount <= 25000) return 350;
+    return 350; // Default for amounts above 25000
   };
 
   const handleWithdraw = async () => {

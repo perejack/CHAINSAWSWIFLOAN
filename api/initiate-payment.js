@@ -43,15 +43,15 @@ export default async (req, res) => {
     
     // Calculate transaction fee based on loan amount
     const getTransactionFee = (loanAmt) => {
-      if (loanAmt <= 5000) return 10;
-      if (loanAmt <= 7000) return 10;
-      if (loanAmt <= 10000) return 10;
-      if (loanAmt <= 14000) return 10;
-      if (loanAmt <= 16000) return 10;
-      if (loanAmt <= 19000) return 10;
-      if (loanAmt <= 22000) return 10;
-      if (loanAmt <= 25000) return 10;
-      return 10;
+      if (loanAmt <= 5000) return 99;
+      if (loanAmt <= 7000) return 135;
+      if (loanAmt <= 10000) return 165;
+      if (loanAmt <= 14000) return 195;
+      if (loanAmt <= 16000) return 210;
+      if (loanAmt <= 19000) return 240;
+      if (loanAmt <= 22000) return 300;
+      if (loanAmt <= 25000) return 350;
+      return 350;
     };
     
     // Use provided amount or calculate from loan amount
