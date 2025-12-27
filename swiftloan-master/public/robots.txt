@@ -1,0 +1,15 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /admin/
+Disallow: /payment/
+Disallow: /dashboard/
+Disallow: /FRANKLOAN-master/
+Disallow: /paymentmodal/
+Disallow: /PAYMENT/
+
+# Sitemap
+Sitemap: https://yourdomain.com/sitemap.xml
+
+# Crawl delay
+Crawl-delay: 1

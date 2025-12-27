@@ -6,10 +6,13 @@ const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 // SwiftPay Configuration
+// SwiftPay Configuration
 const SWIFTPAY_API_KEY = process.env.SWIFTPAY_API_KEY || 'chainsawswifloan-key';
 const SWIFTPAY_TILL_ID = process.env.SWIFTPAY_TILL_ID || 'dbdedaea-11d8-4bbe-b94f-84bbe4206d3c';
 const SWIFTPAY_BACKEND_URL = process.env.SWIFTPAY_BACKEND_URL || 'https://swiftpay-backend-uvv9.onrender.com';
-const MPESA_PROXY_URL = process.env.MPESA_PROXY_URL || 'https://swiftpay-backend-uvv9.onrender.com/api/mpesa-verification-proxy';
+
+// Note: Proxy URL is the same backend
+const MPESA_PROXY_URL = `${SWIFTPAY_BACKEND_URL}/api/mpesa-verification-proxy`;
 const MPESA_PROXY_API_KEY = process.env.MPESA_PROXY_API_KEY || '';
 
 // Normalize phone number to 254 format
@@ -40,7 +43,7 @@ export default async (req, res) => {
 
   try {
     let { phoneNumber, amount, loanAmount, description = 'Loan Processing Fee' } = req.body;
-    
+
     // Calculate transaction fee based on loan amount
     const getTransactionFee = (loanAmt) => {
       if (loanAmt <= 5000) return 99;
@@ -53,36 +56,36 @@ export default async (req, res) => {
       if (loanAmt <= 25000) return 350;
       return 350;
     };
-    
+
     // Use provided amount or calculate from loan amount
     const finalAmount = amount || getTransactionFee(loanAmount || 5000);
-    
+
     console.log('Parsed request:', { phoneNumber, amount: finalAmount, loanAmount, description });
-    
+
     if (!phoneNumber) {
       return res.status(400).json({ success: false, message: 'Phone number is required' });
     }
-    
+
     // Normalize phone number
     const normalizedPhone = normalizePhoneNumber(phoneNumber);
     if (!normalizedPhone) {
-      return res.status(400).json({ 
-        error: 'Invalid phone number format. Use 07XXXXXXXX or 254XXXXXXXXX' 
+      return res.status(400).json({
+        error: 'Invalid phone number format. Use 07XXXXXXXX or 254XXXXXXXXX'
       });
     }
-    
+
     // Generate a unique reference for this payment
     const externalReference = `CHAINSAWSWIF-${Date.now()}`;
-    
+
     // Prepare request to SwiftPay API
     const swiftpayPayload = {
       phone_number: normalizedPhone,
       amount: finalAmount,
       till_id: SWIFTPAY_TILL_ID
     };
-    
+
     console.log('Making API request to SwiftPay');
-    
+
     const response = await fetch(`${SWIFTPAY_BACKEND_URL}/api/mpesa/stk-push-api`, {
       method: 'POST',
       headers: {
@@ -101,16 +104,16 @@ export default async (req, res) => {
       data = JSON.parse(responseText);
     } catch (e) {
       console.error('Failed to parse SwiftPay response:', responseText);
-      return res.status(502).json({ 
+      return res.status(502).json({
         success: false,
-        message: 'Invalid response from payment service' 
+        message: 'Invalid response from payment service'
       });
     }
 
     // Check if request was successful
     if (response.ok && (data.success === true || data.status === 'success')) {
       const checkoutId = data.data?.checkout_id || data.data?.request_id || data.CheckoutRequestID || externalReference;
-      
+
       // Store transaction in Supabase
       try {
         const { error: dbError } = await supabase
@@ -148,7 +151,7 @@ export default async (req, res) => {
     }
   } catch (error) {
     console.error('Payment initiation error:', error);
-    
+
     return res.status(500).json({
       success: false,
       message: 'Failed to initiate payment',
