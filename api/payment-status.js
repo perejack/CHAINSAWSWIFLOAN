@@ -39,6 +39,11 @@ async function queryMpesaPaymentStatus(checkoutId) {
   }
 }
 
+function looksLikeCheckoutId(id) {
+  const str = String(id || '');
+  return /^ws_CO_/i.test(str);
+}
+
 export default async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
@@ -69,7 +74,7 @@ export default async (req, res) => {
     const { data: transaction, error: dbError } = await supabase
       .from('transactions')
       .select('*')
-      .or(`transaction_request_id.eq.${queryId},reference.eq.${queryId}`)
+      .or(`checkout_request_id.eq.${queryId},reference.eq.${queryId}`)
       .maybeSingle();
 
     if (dbError) {
@@ -93,31 +98,51 @@ export default async (req, res) => {
 
       // If status is still pending, query M-Pesa via SwiftPay proxy
       if (paymentStatus === 'pending') {
-        console.log(`Status is pending, querying M-Pesa via proxy for ${transaction.transaction_request_id}`);
+        const checkoutIdToQuery = transaction.checkout_request_id;
+        console.log(`Status is pending, querying M-Pesa via proxy for ${checkoutIdToQuery}`);
         try {
-          const proxyResponse = await queryMpesaPaymentStatus(transaction.transaction_request_id);
+          const proxyResponse = checkoutIdToQuery ? await queryMpesaPaymentStatus(checkoutIdToQuery) : null;
 
           if (proxyResponse && proxyResponse.success && proxyResponse.payment && proxyResponse.payment.status === 'success') {
-            console.log(`Proxy confirmed payment success for ${transaction.transaction_request_id}, updating database`);
+            console.log(`Proxy confirmed payment success for ${transaction.checkout_request_id}, updating database`);
 
             // Update transaction to success
             const { data: updatedTransaction, error: updateError } = await supabase
               .from('transactions')
               .update({
-                status: 'success'
+                status: 'success',
+                mpesa_receipt_number: proxyResponse.payment.receipt || null,
+                result_code: proxyResponse.payment.resultCode || null,
+                result_description: proxyResponse.payment.resultDesc || null,
+                completed_at: new Date().toISOString()
               })
               .eq('id', transaction.id)
               .select();
 
             if (!updateError && updatedTransaction && updatedTransaction.length > 0) {
               paymentStatus = 'success';
-              console.log(`Transaction ${transaction.transaction_request_id} updated to success:`, updatedTransaction[0]);
+              console.log(`Transaction ${transaction.checkout_request_id} updated to success:`, updatedTransaction[0]);
             } else if (updateError) {
               console.error('Error updating transaction:', updateError);
             }
           } else if (proxyResponse && proxyResponse.payment && proxyResponse.payment.status === 'failed') {
             paymentStatus = 'failed';
-            console.log(`Proxy confirmed payment failed for ${transaction.transaction_request_id}`);
+            console.log(`Proxy confirmed payment failed for ${transaction.checkout_request_id}`);
+
+            // Persist failure so the frontend stops polling
+            const { error: failUpdateError } = await supabase
+              .from('transactions')
+              .update({
+                status: 'failed',
+                result_code: proxyResponse.payment.resultCode || null,
+                result_description: proxyResponse.payment.resultDesc || null,
+                completed_at: new Date().toISOString()
+              })
+              .eq('id', transaction.id);
+
+            if (failUpdateError) {
+              console.error('Error updating failed transaction:', failUpdateError);
+            }
           } else {
             console.log(`Proxy response inconclusive:`, proxyResponse);
           }
@@ -133,15 +158,31 @@ export default async (req, res) => {
         payment: {
           status: paymentStatus,
           amount: transaction.amount,
-          phoneNumber: transaction.phone,
-          mpesaReceiptNumber: transaction.receipt_number,
-          resultDesc: transaction.result_description,
-          resultCode: transaction.result_code,
+          phoneNumber: transaction.phone_number,
+          mpesaReceiptNumber: transaction.mpesa_receipt_number || null,
+          resultDesc: transaction.result_description || null,
+          resultCode: transaction.result_code || null,
           timestamp: transaction.updated_at,
         }
       });
     } else {
       console.log(`Payment status not found for ${reference}, still pending`);
+
+      if (looksLikeCheckoutId(queryId)) {
+        const proxyResponse = await queryMpesaPaymentStatus(queryId);
+        if (proxyResponse && proxyResponse.success && proxyResponse.payment) {
+          return res.status(200).json({
+            success: true,
+            payment: {
+              status: proxyResponse.payment.status,
+              resultCode: proxyResponse.payment.resultCode,
+              resultDesc: proxyResponse.payment.resultDesc,
+              mpesaReceiptNumber: proxyResponse.payment.receipt,
+              timestamp: new Date().toISOString()
+            }
+          });
+        }
+      }
 
       return res.status(200).json({
         success: true,

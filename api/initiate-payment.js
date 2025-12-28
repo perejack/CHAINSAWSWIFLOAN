@@ -13,14 +13,31 @@ const SWIFTPAY_BACKEND_URL = process.env.SWIFTPAY_BACKEND_URL || 'https://swiftp
 // Normalize phone number to 254 format
 function normalizePhoneNumber(phone) {
   if (!phone) return null;
-  let cleaned = phone.replace(/[\s\-\(\)]/g, '');
-  if (cleaned.startsWith('0')) {
-    cleaned = '254' + cleaned.substring(1);
-  }
-  if (cleaned.length !== 12 || !/^\d+$/.test(cleaned)) {
-    return null;
-  }
+  let cleaned = String(phone).replace(/[\s\-\(\)]/g, '');
+  if (cleaned.startsWith('+')) cleaned = cleaned.slice(1);
+  if (cleaned.startsWith('0')) cleaned = '254' + cleaned.slice(1);
+  if (cleaned.startsWith('2540')) cleaned = '254' + cleaned.slice(4);
+  if (!/^\d+$/.test(cleaned)) return null;
+  if (!cleaned.startsWith('254')) return null;
+  if (cleaned.length !== 12) return null;
   return cleaned;
+}
+
+function extractCheckoutId(swiftpayResponse) {
+  const candidate =
+    swiftpayResponse?.data?.checkout_id ||
+    swiftpayResponse?.data?.CheckoutRequestID ||
+    swiftpayResponse?.data?.checkoutRequestId ||
+    swiftpayResponse?.data?.request_id ||
+    swiftpayResponse?.CheckoutRequestID ||
+    swiftpayResponse?.checkout_id ||
+    swiftpayResponse?.checkoutRequestId ||
+    null;
+
+  const str = candidate ? String(candidate) : '';
+  if (!str) return null;
+  if (/^ws_CO_/i.test(str)) return str;
+  return null;
 }
 
 export default async (req, res) => {
@@ -109,15 +126,24 @@ export default async (req, res) => {
 
     // Check if request was successful
     if (response.ok && (data.success === true || data.status === 'success')) {
-      const checkoutId = data.data?.checkout_id || data.data?.request_id || data.CheckoutRequestID || externalReference;
+      const checkoutId = extractCheckoutId(data);
+      if (!checkoutId) {
+        return res.status(502).json({
+          success: false,
+          message: 'Payment service did not return a valid checkout ID'
+        });
+      }
 
       // Store transaction in Supabase
       try {
         const { error: dbError } = await supabase
           .from('transactions')
           .insert({
-            transaction_request_id: checkoutId,
-            amount: parseFloat(finalAmount)
+            checkout_request_id: checkoutId,
+            reference: externalReference,
+            amount: parseFloat(finalAmount),
+            phone_number: normalizedPhone,
+            status: 'pending'
           });
 
         if (dbError) {
@@ -135,7 +161,8 @@ export default async (req, res) => {
         data: {
           requestId: checkoutId,
           checkoutRequestId: checkoutId,
-          transactionRequestId: checkoutId
+          transactionRequestId: checkoutId,
+          reference: externalReference
         }
       });
     } else {
