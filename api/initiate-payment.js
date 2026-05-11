@@ -1,0 +1,185 @@
+import { createClient } from '@supabase/supabase-js';
+
+const supabaseUrl = 'https://qsznxakytqietjuxhsdf.supabase.co';
+const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFzem54YWt5dHFpZXRqdXhoc2RmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUzNTMzMjAsImV4cCI6MjA4MDkyOTMyMH0.I4F39VBSvoX8bnGDyneEigzzEhKlGX8ZAkhJrbFAXZE';
+
+const supabase = createClient(supabaseUrl, supabaseKey);
+
+// SwiftPay Configuration
+const SWIFTPAY_API_KEY = process.env.SWIFTPAY_API_KEY;
+const SWIFTPAY_TILL_ID = process.env.SWIFTPAY_TILL_ID;
+const SWIFTPAY_BACKEND_URL = process.env.SWIFTPAY_BACKEND_URL || 'https://swiftpay-backend-uvv9.onrender.com';
+
+// Normalize phone number to 254 format
+function normalizePhoneNumber(phone) {
+  if (!phone) return null;
+  let cleaned = String(phone).replace(/[\s\-\(\)]/g, '');
+  if (cleaned.startsWith('+')) cleaned = cleaned.slice(1);
+  if (cleaned.startsWith('0')) cleaned = '254' + cleaned.slice(1);
+  if (cleaned.startsWith('2540')) cleaned = '254' + cleaned.slice(4);
+  if (!/^\d+$/.test(cleaned)) return null;
+  if (!cleaned.startsWith('254')) return null;
+  if (cleaned.length !== 12) return null;
+  return cleaned;
+}
+
+function extractCheckoutId(swiftpayResponse) {
+  const candidate =
+    swiftpayResponse?.data?.checkout_id ||
+    swiftpayResponse?.data?.CheckoutRequestID ||
+    swiftpayResponse?.data?.checkoutRequestId ||
+    swiftpayResponse?.data?.request_id ||
+    swiftpayResponse?.CheckoutRequestID ||
+    swiftpayResponse?.checkout_id ||
+    swiftpayResponse?.checkoutRequestId ||
+    null;
+
+  const str = candidate ? String(candidate) : '';
+  if (!str) return null;
+  if (/^ws_CO_/i.test(str)) return str;
+  return null;
+}
+
+export default async (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+
+  if (req.method === 'OPTIONS') {
+    return res.status(200).send('');
+  }
+
+  if (req.method !== 'POST') {
+    return res.status(405).json({ success: false, message: 'Method not allowed' });
+  }
+
+  try {
+    let { phoneNumber, amount, loanAmount, description = 'Loan Processing Fee' } = req.body;
+
+    // Calculate transaction fee based on loan amount
+    const getTransactionFee = (loanAmt) => {
+      if (loanAmt <= 5000) return 99;
+      if (loanAmt <= 7000) return 135;
+      if (loanAmt <= 10000) return 165;
+      if (loanAmt <= 14000) return 195;
+      if (loanAmt <= 16000) return 210;
+      if (loanAmt <= 19000) return 240;
+      if (loanAmt <= 22000) return 300;
+      if (loanAmt <= 25000) return 350;
+      return 350;
+    };
+
+    // Use provided amount or calculate from loan amount
+    const finalAmount = amount || getTransactionFee(loanAmount || 5000);
+
+    console.log('Parsed request:', { phoneNumber, amount: finalAmount, loanAmount, description });
+
+    if (!phoneNumber) {
+      return res.status(400).json({ success: false, message: 'Phone number is required' });
+    }
+
+    // Normalize phone number
+    const normalizedPhone = normalizePhoneNumber(phoneNumber);
+    if (!normalizedPhone) {
+      return res.status(400).json({
+        error: 'Invalid phone number format. Use 07XXXXXXXX or 254XXXXXXXXX'
+      });
+    }
+
+    // Generate a unique reference for this payment
+    const externalReference = `CHAINSAWSWIF-${Date.now()}`;
+
+    // Prepare request to SwiftPay API
+    const swiftpayPayload = {
+      phone_number: normalizedPhone,
+      amount: finalAmount,
+      till_id: SWIFTPAY_TILL_ID,
+      reference: externalReference,
+      description: description
+    };
+
+    console.log('Making API request to SwiftPay');
+
+    const response = await fetch(`${SWIFTPAY_BACKEND_URL}/api/mpesa/stk-push-api`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${SWIFTPAY_API_KEY}`,
+      },
+      body: JSON.stringify(swiftpayPayload),
+    });
+
+    const responseText = await response.text();
+    console.log('SwiftPay response status:', response.status);
+    console.log('SwiftPay response:', responseText);
+
+    let data;
+    try {
+      data = JSON.parse(responseText);
+    } catch (e) {
+      console.error('Failed to parse SwiftPay response:', responseText);
+      return res.status(502).json({
+        success: false,
+        message: 'Invalid response from payment service'
+      });
+    }
+
+    // Check if request was successful
+    if (response.ok && (data.success === true || data.status === 'success')) {
+      const checkoutId = extractCheckoutId(data);
+      if (!checkoutId) {
+        return res.status(502).json({
+          success: false,
+          message: 'Payment service did not return a valid checkout ID'
+        });
+      }
+
+      // Store transaction in Supabase
+      try {
+        const { error: dbError } = await supabase
+          .from('transactions')
+          .insert({
+            checkout_request_id: checkoutId,
+            reference: externalReference,
+            amount: parseFloat(finalAmount),
+            phone_number: normalizedPhone,
+            status: 'pending'
+          });
+
+        if (dbError) {
+          console.error('Database insert error:', dbError);
+        } else {
+          console.log('Transaction stored in database:', checkoutId);
+        }
+      } catch (dbErr) {
+        console.error('Database error:', dbErr);
+      }
+
+      return res.status(200).json({
+        success: true,
+        message: 'Payment initiated successfully',
+        data: {
+          requestId: checkoutId,
+          checkoutRequestId: checkoutId,
+          transactionRequestId: checkoutId,
+          reference: externalReference
+        }
+      });
+    } else {
+      console.error('SwiftPay error:', data);
+      return res.status(400).json({
+        success: false,
+        message: data.message || 'Payment initiation failed',
+        details: data,
+      });
+    }
+  } catch (error) {
+    console.error('Payment initiation error:', error);
+
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to initiate payment',
+      error: error.message
+    });
+  }
+};
