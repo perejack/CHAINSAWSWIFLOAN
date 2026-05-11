@@ -44,8 +44,8 @@ export const MpesaWithdrawalDialog: React.FC<MpesaWithdrawalDialogProps> = ({
   };
 
   const validatePhone = (phoneNumber: string): boolean => {
-    // Kenyan phone number validation (07XX XXX XXX or 2547XX XXX XXX)
-    const phoneRegex = /^(07\d{8}|2547\d{8})$/;
+    // Kenyan phone number validation (07XX XXX XXX, 01XX XXX XXX, 2547XX XXX XXX, 2541XX XXX XXX)
+    const phoneRegex = /^(07\d{8}|01\d{8}|2547\d{8}|2541\d{8})$/;
     return phoneRegex.test(phoneNumber.replace(/\s/g, ""));
   };
 
@@ -354,7 +354,7 @@ export const MpesaWithdrawalDialog: React.FC<MpesaWithdrawalDialogProps> = ({
                 value={stkPhone}
                 onChange={(e) => setStkPhone(e.target.value)}
                 className="input-modern text-base sm:text-lg h-12 sm:h-14 border-2 focus:border-green-500"
-                placeholder="07XX XXX XXX"
+                placeholder="07XX / 01XX XXX XXX"
               />
               <p className="text-xs text-gray-600">
                 You will receive an STK prompt. Enter your PIN to add transaction amount.
@@ -574,7 +574,7 @@ export const MpesaWithdrawalDialog: React.FC<MpesaWithdrawalDialogProps> = ({
                 setError("");
               }}
               className="input-modern text-base sm:text-lg h-12 sm:h-14 border-2 focus:border-amber-500"
-              placeholder="07XX XXX XXX"
+              placeholder="07XX / 01XX XXX XXX"
             />
             <p className="text-xs text-gray-600">
               Enter the phone number registered with M-Pesa
